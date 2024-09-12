@@ -1,58 +1,34 @@
-defmodule Mix.Tasks.Tzdb.Run do
-  use Mix.Task
-
-  @input "files/input"
+defmodule Benchmark do
+  # @input "files/input"
   # @input "files/input_far_future"
+  @with_zone_abbr true
 
-  def run(command_line_args) do
-    {lib, module, version} = parse_args(command_line_args)
-
+  def run(lib, version, input) do
+    module = lib |> Atom.to_string() |> Macro.camelize()
     time_zone_db = Module.concat(module, TimeZoneDatabase)
 
-    time =
-      measure(fn ->
-        generate_files(
-          time_zone_db,
-          version,
-          Path.join([File.cwd!(), "files/output", version, to_string(lib)])
-        )
-      end)
-
-    Mix.shell().info("Time: #{round(time)} seconds")
-  end
-
-  defp parse_args(["tz"]), do: {:tz, Tz, start!(:tz) && Tz.iana_version()}
-
-  defp parse_args(["time_zone_info"]),
-    do: {:time_zone_info, TimeZoneInfo, start!(:time_zone_info) && TimeZoneInfo.iana_version()}
-
-  defp parse_args(["zoneinfo"]), do: {:zoneinfo, Zoneinfo, start!(:zoneinfo) && zoneifo_version()}
-  defp parse_args(["tzdata"]), do: {:tzdata, Tzdata, start!(:tzdata) && Tzdata.tzdata_version()}
-
-  defp parse_args(_) do
-    Mix.raise(
-      "command requires one argument: the name of the library to generate data for (tz, time_zone_info, zoneinfo, tzdata)"
+    generate_files(
+      time_zone_db,
+      version,
+      input,
+      Path.join([File.cwd!(), "files/output", version, to_string(lib)])
     )
   end
 
-  defp start!(lib) do
+  def start!(lib) do
     {:ok, _} = Application.ensure_all_started(lib)
     :ok
   end
 
-  defp zoneifo_version() do
+  def stop!(lib) do
+    :ok = Application.stop(lib)
+    :ok
+  end
+
+  def zoneifo_version() do
     {:ok, version} = File.read("/usr/share/zoneinfo/+VERSION")
     String.trim(version)
   end
-
-  defp measure(function) do
-    function
-    |> :timer.tc()
-    |> elem(0)
-    |> Kernel./(1_000_000)
-  end
-
-  @with_zone_abbr true
 
   defp date_time_to_string(dt) do
     dt_string = Calendar.strftime(dt, "%c")
@@ -75,16 +51,14 @@ defmodule Mix.Tasks.Tzdb.Run do
   defp do_offset_to_string({h, m, 0}), do: :io_lib.format("~2..0B:~2..0B", [h, m])
   defp do_offset_to_string({h, m, s}), do: :io_lib.format("~2..0B:~2..0B:~2..0B", [h, m, s])
 
-  defp generate_files(time_zone_database, version, outputDir) do
-    inputDir = Path.join([File.cwd!(), @input])
+  defp generate_files(time_zone_database, version, input, outputDir) do
+    inputDir = Path.join([File.cwd!(), input])
 
     File.rm_rf!(outputDir)
     File.mkdir_p!(outputDir)
 
     File.ls!(inputDir)
     |> Enum.each(fn filename ->
-      Mix.shell().info("Generating data for file '#{filename}'...")
-
       File.write!(Path.join(outputDir, filename), version <> "\n")
 
       File.stream!(Path.join(inputDir, filename))
@@ -101,8 +75,6 @@ defmodule Mix.Tasks.Tzdb.Run do
       end)
       |> Stream.into(File.stream!(Path.join(outputDir, filename), [:append]))
       |> Stream.run()
-
-      Mix.shell().info("Done")
     end)
   end
 
